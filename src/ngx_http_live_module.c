@@ -1110,7 +1110,7 @@ ngx_http_live_init_module(ngx_cycle_t *cycle)
     size_t                      buffer_size;
     socklen_t                   olen;
     ngx_uint_t                  n, nfd;
-    ngx_socket_t               *p, fds[2];
+    ngx_socket_t               *fd, fds[2];
     ngx_core_conf_t            *ccf;
     ngx_pool_cleanup_t         *cln;
     ngx_http_live_main_conf_t  *lmcf;
@@ -1125,13 +1125,13 @@ ngx_http_live_init_module(ngx_cycle_t *cycle)
 
     nfd = ccf->worker_processes;
 
-    p = ngx_palloc(cycle->pool, nfd * 2 * sizeof(ngx_socket_t));
-    if (p == NULL) {
+    fd = ngx_palloc(cycle->pool, nfd * 2 * sizeof(ngx_socket_t));
+    if (fd == NULL) {
         return NGX_ERROR;
     }
 
-    lmcf->read_fd = p;
-    lmcf->write_fd = p + nfd * sizeof(ngx_socket_t);
+    lmcf->read_fd = fd;
+    lmcf->write_fd = fd + nfd * sizeof(ngx_socket_t);
 
     cln = ngx_pool_cleanup_add(cycle->pool, 0);
     if (cln == NULL) {
