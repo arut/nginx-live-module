@@ -9,11 +9,10 @@ NGINX Live Module
 Features
 ========
 
+- multi-worker HTTP publish/subscribe streaming
 - receives arbitrary live data POST'ed over HTTP
 - passes it to all HTTP GET clients waiting on the same key in realtime
-- works with multiple workers
-- may operate in consistent or inconsistent mode
-- may be used for MPEG-TS live streaming or any type of HTTP push
+- may be used for MPEG-TS live streaming or HTTP push
 
 
 Directives
@@ -28,6 +27,29 @@ live_zone
 *Context:* http
 ========== ====
 
+Creates a shared zone ``NAME`` with the ``SIZE`` for keeping the tree of
+currently active streams.  This tree is used to check for duplicate
+publishing and when trying to subscribe to a missing stream when not in
+persistent mode.
+
+The ``persistent`` parameter enables persistent mode.  In this mode a
+subscriber is allowed to be connected to a stream not currently published
+by any publisher.  By default, a new subscriber is only allowed to connect
+to a currently active stream and is automatically disconnected when the
+stream publisher disconnects.
+
+The ``consistent`` parameter enables consistent mode.  In this mode it is not
+allowed for a data stream fragment to be skipped if a subscriber is too slow.
+Once a missing fragment is detected, subscriber is disconnected to avoid
+data inconsistency.  By default, inconsistency is allowed, which is normal
+for streaming MPEG-TS.  For stricter protocols this parameter should be
+enabled to enforce consistency.
+
+The ``flush`` parameter forces immediate flush of each data buffer sent
+towards subscriber.  If not specified, output data is buffered as set by the
+``postpone_output`` nginx directive.
+
+
 live_buffer_size
 ----------------
 
@@ -35,6 +57,7 @@ live_buffer_size
 *Syntax:*  ``live_buffer_size SIZE``
 *Context:* http
 ========== ====
+
 
 live
 ----
@@ -44,6 +67,11 @@ live
 *Context:* location
 ========== ========
 
+This directive enables publish/subscribe streaming in the location.  The shared
+zone ``NAME`` is used to account streams.  This shared zone should be created
+by the ``live_zone`` directive.
+
+
 live_methods
 ------------
 
@@ -51,6 +79,10 @@ live_methods
 *Syntax:*  ``live_methods [GET] [POST]``
 *Context:* location
 ========== ========
+
+Specifies which methods are allowed in the location.  The method ``GET`` is
+used to subscribe to a stream, while ``POST`` is used to publish a stream.
+
 
 live_key
 --------
@@ -60,6 +92,9 @@ live_key
 *Context:* location
 *Default*  uri
 ========== ========
+
+Specifies stream key.  By default, request URI is used as the key.
+
 
 live_buffers
 ------------
@@ -75,6 +110,8 @@ Example
 =======
 
 nginx.conf::
+
+    events {}
 
     http {
         live_zone zone=foo:10m persistent flush;
