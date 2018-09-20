@@ -1131,7 +1131,7 @@ ngx_http_live_init_module(ngx_cycle_t *cycle)
     }
 
     lmcf->read_fd = fd;
-    lmcf->write_fd = fd + nfd * sizeof(ngx_socket_t);
+    lmcf->write_fd = fd + nfd;
 
     cln = ngx_pool_cleanup_add(cycle->pool, 0);
     if (cln == NULL) {
