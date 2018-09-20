@@ -106,15 +106,15 @@ live_buffers
 ========== ========
 
 
-Example
-=======
+Example 1
+=========
 
 nginx.conf::
 
     events {}
 
     http {
-        live_zone zone=foo:10m persistent flush;
+        live_zone zone=foo:10m;
 
         server {
             listen 8000;
@@ -136,3 +136,40 @@ publish MPEG-TS::
 play MPEG-TS::
 
     ffplay http://127.0.0.1:8000/sintel
+
+
+Example 2
+=========
+
+nginx.conf::
+
+    events {}
+
+    http {
+        live_zone zone=foo:10m persistent flush;
+
+        server {
+            listen 8000;
+
+            location ~ ^/pub/(?<name>[a-z0-9]*)$ {
+                live foo;
+                live_key $name;
+                live_methods POST;
+            }
+
+            location ~ ^/sub/(?<name>[a-z0-9]*)$ {
+                live foo;
+                live_key $name;
+                live_methods GET;
+            }
+        }
+    }
+
+subscribe::
+
+    curl -N 127.0.0.1:8000/sub/foo
+
+publish::
+
+    curl -d 'message1' 127.0.0.1:9000/pub/foo
+    curl -d 'message2' 127.0.0.1:9000/pub/foo
