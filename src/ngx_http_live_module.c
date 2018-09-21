@@ -504,7 +504,9 @@ ngx_http_live_get_data_handler(ngx_http_request_t *r, u_char *p, size_t size,
 
     live = ctx->live;
 
-    if (live->consistent && ctx->counter != counter) {
+    /* XXX manage consistency across publishers */
+
+    if (live->consistent && (counter && ctx->counter != counter)) {
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
                       "live inconsistency: %ui/%ui", counter, ctx->counter);
         ctx->done = 1;
@@ -557,7 +559,7 @@ ngx_http_live_get_data_handler(ngx_http_request_t *r, u_char *p, size_t size,
         size -= n;
     }
 
-    ctx->counter++;
+    ctx->counter = counter + 1;
 }
 
 

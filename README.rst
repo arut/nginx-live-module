@@ -146,7 +146,7 @@ nginx.conf::
     events {}
 
     http {
-        live_zone zone=foo:10m persistent flush;
+        live_zone zone=foo:10m persistent consistent flush;
 
         server {
             listen 8000;
