@@ -44,7 +44,7 @@ typedef struct {
     size_t                      size;
     ngx_http_live_t            *live;
     ngx_uint_t                  counter;
-    ngx_uint_t                  done;  /* unsigned  done:1; */
+    ngx_uint_t                  last;  /* unsigned  last:1; */
     u_char                      md5[16];
     u_char                      data[1];
 } ngx_http_live_msg_t;
@@ -63,7 +63,8 @@ typedef struct {
     ngx_http_request_t         *request;
     ngx_uint_t                  counter;
     ngx_uint_t                  allocated;
-    ngx_uint_t                  done;  /* unsigned  done:1; */
+    unsigned                    last_sent:1;
+    unsigned                    done:1;
 } ngx_http_live_ctx_t;
 
 
@@ -96,7 +97,7 @@ static void ngx_http_live_get_rbtree_insert_value(ngx_rbtree_node_t *temp,
     ngx_rbtree_node_t *node, ngx_rbtree_node_t *sentinel);
 static void ngx_http_live_get_write_handler(ngx_http_request_t *r);
 static void ngx_http_live_get_data_handler(ngx_http_request_t *r, u_char *p,
-    size_t size, ngx_uint_t counter, ngx_uint_t done);
+    size_t size, ngx_uint_t counter, ngx_uint_t last);
 
 static ngx_int_t ngx_http_live_post(ngx_http_request_t *r);
 static void ngx_http_live_post_cleanup(void *data);
@@ -485,7 +486,7 @@ ngx_http_live_get_write_handler(ngx_http_request_t *r)
 
 static void
 ngx_http_live_get_data_handler(ngx_http_request_t *r, u_char *p, size_t size,
-    ngx_uint_t counter, ngx_uint_t done)
+    ngx_uint_t counter, ngx_uint_t last)
 {
     size_t                     n;
     ngx_buf_t                 *b;
@@ -495,7 +496,7 @@ ngx_http_live_get_data_handler(ngx_http_request_t *r, u_char *p, size_t size,
     ngx_http_live_loc_conf_t  *llcf;
 
     ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                   "http live get data n:%uz, d:%ui", size, done);
+                   "http live get data n:%uz, l:%ui", size, last);
 
     ctx = ngx_http_get_module_ctx(r, ngx_http_live_module);
     if (ctx == NULL) {
@@ -504,16 +505,14 @@ ngx_http_live_get_data_handler(ngx_http_request_t *r, u_char *p, size_t size,
 
     live = ctx->live;
 
-    /* XXX manage consistency across publishers */
-
-    if (live->consistent && (counter && ctx->counter != counter)) {
+    if (live->consistent && ctx->counter != counter) {
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
                       "live inconsistency: %ui/%ui", counter, ctx->counter);
         ctx->done = 1;
         return;
     }
 
-    if (done) {
+    if (!live->persistent && last) {
         ctx->done = 1;
     }
 
@@ -559,7 +558,7 @@ ngx_http_live_get_data_handler(ngx_http_request_t *r, u_char *p, size_t size,
         size -= n;
     }
 
-    ctx->counter = counter + 1;
+    ctx->counter = last ? 0 : counter + 1;
 }
 
 
@@ -656,12 +655,7 @@ ngx_http_live_post_cleanup(void *data)
     if (ctx->node) {
         live = ctx->live;
 
-        ngx_shmtx_lock(&live->shpool->mutex);
-        ngx_rbtree_delete(&live->sh->rbtree, &ctx->node->node);
-        ngx_slab_free_locked(live->shpool, ctx->node);
-        ngx_shmtx_unlock(&live->shpool->mutex);
-
-        if (!live->persistent) {
+        if (!ctx->last_sent) {
             n = offsetof(ngx_http_live_msg_t, data);
             p = ngx_alloc(sizeof(ngx_buf_t) + n, ngx_cycle->log);
 
@@ -675,7 +669,7 @@ ngx_http_live_post_cleanup(void *data)
                 msg->size = n;
                 msg->live = live;
                 msg->counter = ctx->counter++;
-                msg->done = 1;
+                msg->last = 1;
                 ngx_memcpy(msg->md5, ctx->md5, 16);
 
                 if (ngx_http_live_notify(ctx->request, b) != NGX_OK) {
@@ -683,6 +677,11 @@ ngx_http_live_post_cleanup(void *data)
                 }
             }
         }
+
+        ngx_shmtx_lock(&live->shpool->mutex);
+        ngx_rbtree_delete(&live->sh->rbtree, &ctx->node->node);
+        ngx_slab_free_locked(live->shpool, ctx->node);
+        ngx_shmtx_unlock(&live->shpool->mutex);
     }
 
     if (ctx->buf) {
@@ -769,9 +768,6 @@ ngx_http_live_post_read_handler(ngx_http_request_t *r)
     ngx_http_live_ctx_t      *ctx;
     ngx_http_request_body_t  *rb;
 
-    ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                   "http live post read handler");
-
     if (ngx_exiting || ngx_terminate) {
         ngx_http_finalize_request(r, NGX_HTTP_CLOSE);
         return;
@@ -780,6 +776,10 @@ ngx_http_live_post_read_handler(ngx_http_request_t *r)
     rev = r->connection->read;
 
     ctx = ngx_http_get_module_ctx(r, ngx_http_live_module);
+
+    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                   "http live post read handler d:%d, r:%O",
+                   rev->delayed, ctx->buf->file_pos);
 
     if (rev->delayed || ctx->buf->file_pos) {
         if (ngx_handle_read_event(rev, 0) != NGX_OK) {
@@ -837,13 +837,17 @@ ngx_http_live_post_read_handler(ngx_http_request_t *r)
         msg->size = b->last - b->pos;
         msg->live = ctx->live;
         msg->counter = ctx->counter++;
-        msg->done = 0;
+        msg->last = (rb->bufs || r->reading_body) ? 0 : 1;
         ngx_memcpy(msg->md5, ctx->md5, 16);
 
         rc = ngx_http_live_notify(r, b);
         if (rc == NGX_ERROR) {
             ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
             return;
+        }
+
+        if (msg->last) {
+            ctx->last_sent = 1;
         }
     }
 
@@ -1392,9 +1396,9 @@ ngx_http_live_notify_read_handler(ngx_event_t *rev)
 
             ngx_hex_dump(hex, msg->md5, 16);
 
-            ngx_log_debug4(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
-                           "http live notify recv n:%z, c:%ui, md5:%*s",
-                           n, msg->counter, 32, hex);
+            ngx_log_debug5(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+                           "http live notify recv n:%z, c:%ui, l:%d, md5:%*s",
+                           n, msg->counter, msg->last, 32, hex);
         }
 #endif
 
@@ -1423,7 +1427,7 @@ ngx_http_live_notify_process_msg(ngx_http_live_msg_t *msg)
         r = get->request;
         c = r->connection;
 
-        ngx_http_live_get_data_handler(r, p, size, msg->counter, msg->done);
+        ngx_http_live_get_data_handler(r, p, size, msg->counter, msg->last);
 
         ngx_post_event(c->write, &ngx_posted_events);
 
@@ -1461,21 +1465,37 @@ ngx_http_live_notify_write_handler(ngx_event_t *wev)
 
         n = c->send(c, b->pos, b->last - b->pos);
 
-        ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
-                       "http live notify send b:%p, n:%z", b, n);
+        if (n == NGX_AGAIN) {
+            break;
+        }
 
-        if (n < 0) {
-            ngx_log_debug0(NGX_LOG_DEBUG_HTTP, ngx_cycle->log,
-                           ngx_socket_errno,
-                           "send() to live notify postponed");
+        if (n == NGX_ERROR) {
+            /*
+             * This can be a serious socket error, as well as
+             * ENOBUFS on BSD systems when SOCK_DGRAM is used.
+             * Anyway, there's not much we can do at this point
+             * rather than retry the send after a few millisec.
+             *
+             * This situation is common on MacOS however.
+             * Being a BSD system and missing a SOCK_SEQPACKET
+             * implementation (despite having a #define), it may
+             * return ENOBUFS here.  Typically for BSD, there is
+             * no way to wait for ENOBUFS condition to end with
+             * kqueue/select.  The only available solution is
+             * waiting on a timer.
+             */
 
-            /* treat any error as socket buffer overflow */
-
+            wev->cancelable = 1;
             wev->error = 0;
-            wev->ready = 0;
+
+            ngx_add_timer(wev, 10);
 
             break;
         }
+
+        ngx_log_debug3(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+                       "http live notify send b:%p, n:%z, r:%O",
+                       b, n, b->file_pos);
 
         c->data = cl->next;
 
@@ -1524,9 +1544,9 @@ ngx_http_live_notify(ngx_http_request_t *r, ngx_buf_t *b)
         msg = (ngx_http_live_msg_t *) b->pos;
         ngx_hex_dump(hex, msg->md5, 16);
 
-        ngx_log_debug6(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
-                       "http live notify post b:%p, n:%z, c:%ui, t:%p, md5:%*s",
-                       b, msg->size, msg->counter, b->tag, 32, hex);
+        ngx_log_debug7(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+                      "http live notify b:%p, n:%z, c:%ui, l:%d, t:%p, md5:%*s",
+                      b, msg->size, msg->counter, msg->last, b->tag, 32, hex);
     }
 #endif
 
