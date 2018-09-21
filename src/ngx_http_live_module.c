@@ -503,6 +503,10 @@ ngx_http_live_get_data_handler(ngx_http_request_t *r, u_char *p, size_t size,
         return;
     }
 
+    if (ctx->done) {
+        return;
+    }
+
     live = ctx->live;
 
     if (live->consistent && ctx->counter != counter) {
