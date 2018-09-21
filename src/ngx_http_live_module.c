@@ -452,9 +452,20 @@ ngx_http_live_get_write_handler(ngx_http_request_t *r)
         return;
     }
 
+    if (wev->delayed) {
+        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, c->log, 0,
+                       "http live writer delayed");
+
+        if (ngx_handle_write_event(wev, clcf->send_lowat) != NGX_OK) {
+            ngx_http_finalize_request(r, NGX_ERROR);
+        }
+
+        return;
+    }
+
     rc = ngx_http_output_filter(r, ctx->out);
 
-    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http live output filter rc:%i", rc);
 
     if (rc == NGX_ERROR) {
@@ -466,15 +477,18 @@ ngx_http_live_get_write_handler(ngx_http_request_t *r)
                             &ctx->out, &ngx_http_live_module);
 
     if (ctx->done) {
-        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, c->log, 0,
                        "http live close stream");
         ngx_http_finalize_request(r, ngx_http_send_special(r, NGX_HTTP_LAST));
         return;
     }
 
-    if (r->buffered || r->postponed || (r == r->main && c->buffered)) {
-        if (!wev->delayed) {
+    if (!wev->delayed) {
+        if (r->buffered || r->postponed || (r == r->main && c->buffered)) {
             ngx_add_timer(wev, clcf->send_timeout);
+
+        } else if (wev->timer_set) {
+            ngx_del_timer(wev);
         }
     }
 
