@@ -171,5 +171,5 @@ subscribe::
 
 publish::
 
-    curl -d 'message1' 127.0.0.1:9000/pub/foo
-    curl -d 'message2' 127.0.0.1:9000/pub/foo
+    curl -d 'message1' 127.0.0.1:8000/pub/foo
+    curl -d 'message2' 127.0.0.1:8000/pub/foo
