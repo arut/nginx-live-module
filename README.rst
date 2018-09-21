@@ -32,15 +32,15 @@ currently active streams.  This tree is used to check for duplicate
 publishing and when trying to subscribe to a missing stream when not in
 persistent mode.
 
-The ``persistent`` parameter enables persistent mode.  In this mode a
+The ``persistent`` parameter enables the persistent mode.  In this mode a
 subscriber is allowed to be connected to a stream not currently published
 by any publisher.  By default, a new subscriber is only allowed to connect
 to a currently active stream and is automatically disconnected when the
 stream publisher disconnects.
 
-The ``consistent`` parameter enables consistent mode.  In this mode it is not
-allowed for a data stream fragment to be skipped if a subscriber is too slow.
-Once a missing fragment is detected, subscriber is disconnected to avoid
+The ``consistent`` parameter enables the consistent mode.  In this mode it is
+not allowed for a data stream fragment to be skipped if a subscriber is too
+slow.  Once a missing fragment is detected, subscriber is disconnected to avoid
 data inconsistency.  By default, inconsistency is allowed, which is normal
 for streaming MPEG-TS.  For stricter protocols this parameter should be
 enabled to enforce consistency.
