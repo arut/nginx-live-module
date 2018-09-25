@@ -1107,7 +1107,7 @@ ngx_http_live_create_main_conf(ngx_conf_t *cf)
      *     lmcf->write_fd = NULL;
      *     lmcf->read_fd = NULL;
      *     lmcf->nfd = 0;
-     *     lmcf->buffer = NULL;
+     *     lmcf->buf = NULL;
      *     lmcf->enabled = 0;
      *     
      */
