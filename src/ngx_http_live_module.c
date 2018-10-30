@@ -1185,6 +1185,11 @@ ngx_http_live_init_module(ngx_cycle_t *cycle)
                        "http live socketpair w:%d, %d<-%d",
                        n, (int) fds[0], (int) fds[1]);
 
+        lmcf->read_fd[n] = fds[0];
+        lmcf->write_fd[n] = fds[1];
+
+        lmcf->nfd++;
+
         if (ngx_nonblocking(fds[0]) == -1
             || ngx_nonblocking(fds[1]) == -1)
         {
@@ -1245,11 +1250,6 @@ ngx_http_live_init_module(ngx_cycle_t *cycle)
             ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0,
                           "live notify buffer size:%uz", buffer_size);
         }
-
-        lmcf->read_fd[n] = fds[0];
-        lmcf->write_fd[n] = fds[1];
-
-        lmcf->nfd++;
     }
 
     lmcf->buffer_size = buffer_size;
