@@ -292,7 +292,7 @@ ngx_http_live_get(ngx_http_request_t *r)
                    "http live get handler");
 
     rc = ngx_http_discard_request_body(r);
-    if (rc!= NGX_OK) {
+    if (rc != NGX_OK) {
         return rc;
     }
 
