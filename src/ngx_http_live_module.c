@@ -1289,6 +1289,10 @@ ngx_http_live_init_process(ngx_cycle_t *cycle)
     ngx_connection_t           *c;
     ngx_http_live_main_conf_t  *lmcf;
 
+    if (ngx_process != NGX_PROCESS_WORKER) {
+        return NGX_OK;
+    }
+
     lmcf = ngx_http_cycle_get_module_main_conf(cycle, ngx_http_live_module);
 
     if (lmcf == NULL || lmcf->nfd == 0) {
